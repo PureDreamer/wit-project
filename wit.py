@@ -1,5 +1,6 @@
-# Upload 176
+# Upload 181
 from datetime import datetime
+from difflib import unified_diff
 from distutils import dir_util, file_util
 import filecmp
 import itertools
@@ -7,7 +8,6 @@ import logging
 import os
 import pathlib
 import random
-import shutil
 import sys
 
 from matplotlib import pyplot as plt
@@ -152,9 +152,12 @@ def update_files(commit_id, images_folder, MESSAGE):
             search_wit(subfolder="staging_area"))
         cur_1_list = check_same_directory((os.path.join(images_folder, head)))
         if staging_list == cur_1_list:
-            logger.info(
-                f"Tried to copy the same files as the last save, {head}")
-            return False
+            stage = pathlib.Path(search_wit(subfolder="staging_area"))
+            head = pathlib.Path(os.path.join(images_folder, head))
+            if find_diff_infolder(stage, head, printer=False):
+                logger.info(
+                    f"Cant copy, same files {head}")
+                return False
         make_dir(commit_folder)
         dir_util.copy_tree(search_wit(subfolder="staging_area"), commit_folder)
         logger.info(f"current staging_area has been added to {commit_id}")
@@ -195,6 +198,8 @@ def get_diff_files(dir_comp):
 
 def get_diff_content(dir_comp):
     diff_list = []
+    for file in dir_comp.diff_files:
+        diff_list.append(file)
     for direct in dir_comp.subdirs.values():
         directos = [file for file in direct.diff_files if file]
         diff_list.append(directos)
@@ -422,57 +427,259 @@ def get_branch():
     return cur_act
 
 
-def find_merging_point(branch):
-    head, master, _brancher = get_master_head()
-    head = get_father_child(head, True)
-    branch = get_father_child(check_all_branches(branch), True)
-    for pos_merge in head:
-        for pos_merge1 in branch:
-            if pos_merge[1] == pos_merge1[1]:
-                return pos_merge[1]
+# def find_merging_point(branch):
+#     head, master, _brancher = get_master_head()
+#     head = get_father_child(head, True)
+#     branch = get_father_child(check_all_branches(branch), True)
+#     for pos_merge in head:
+#         for pos_merge1 in branch:
+#             if pos_merge[1] == pos_merge1[1]:
+#                 return pos_merge[1]
 
 
-def check_merge(merger, branch_name):
-    head, _master, _brancher = get_master_head()
-    images = search_wit(subfolder="images")
-    cur_father = (os.path.join(images, merger))
-    cur_head = (os.path.join(images, head))
-    cur_stage = (search_wit(subfolder="staging_area"))
-    changes = get_diff_files(filecmp.dircmp(cur_head, cur_stage))
-    branch_com = (os.path.join(images, check_all_branches(branch_name)))
-    if changes != []:
-        logger.warning("cant merge, files not the same!")
-        return False
-    branch_change = get_diff_files(filecmp.dircmp(cur_father, branch_com))
-    head_change = get_diff_files(filecmp.dircmp(cur_father, cur_head))
-    head_files = get_full_path(cur_head, head_change)
-    branch_files = get_full_path(branch_com, branch_change)
-    return branch_files, head_files
+# def check_merge(merger, branch_name):
+#     head, _master, _brancher = get_master_head()
+#     images = search_wit(subfolder="images")
+#     cur_father = (os.path.join(images, merger))
+#     cur_head = (os.path.join(images, head))
+#     cur_stage = (search_wit(subfolder="staging_area"))
+#     changes = get_diff_files(filecmp.dircmp(cur_head, cur_stage))
+#     branch_com = (os.path.join(images, check_all_branches(branch_name)))
+#     if changes != []:
+#         logger.warning("cant merge, files not the same!")
+#         return False
+#     branch_change = get_diff_files(filecmp.dircmp(cur_father, branch_com))
+#     head_change = get_diff_files(filecmp.dircmp(cur_father, cur_head))
+#     head_files = get_full_path(cur_head, head_change)
+#     branch_files = get_full_path(branch_com, branch_change)
+#     return branch_files, head_files
 
 
-def get_full_path(from_where, list_of):
-    inside = os.listdir(from_where)[0]
-    from_where = os.path.join(from_where, inside)
-    full_list = []
-    for files in list_of:
+# def get_full_path(from_where, list_of):
+#     inside = os.listdir(from_where)[0]
+#     from_where = os.path.join(from_where, inside)
+#     full_list = []
+#     for files in list_of:
+#         for file in files:
+#             file = (os.path.join(from_where, file))
+#             full_list.append(f"{file}")
+#     return full_list
+
+
+# def move_to_merge(files):
+#     for file in files:
+#         shutil.copy2(file, search_wit(subfolder="staging_area"))
+
+
+# def merge(branch_name):
+#     if not search_wit():
+#         logger.info(
+#             "Tried to preform merge, No wit found in this directory!")
+#     merger = find_merging_point(branch_name)
+#     branch, head = check_merge(merger, branch_name)
+#     move_to_merge(branch)
+
+def find_head_folder():
+    exclude = [".wit", "images", "staging_area"]
+    file_exclude = ["activated.txt", "follow_wit.log", "references.txt"]
+    for root, dirs, files in os.walk(search_wit(), topdown=True):
+        dirs[:] = [d for d in dirs if d not in exclude]
+        files[:] = [f for f in files if f not in file_exclude]
+        for diro in dirs:
+            return pathlib.Path(os.path.join(root, diro))
+
+
+def find_file(where, kovetz=None, exclude=None):
+    file_list = []
+    if isinstance(kovetz, list):
+        for file in kovetz:
+            kovetz = file
+    for root, dirs, files in os.walk(where, topdown=True):
+        if exclude:
+            # https://stackoverflow.com/a/19859907 by unutbu
+            dirs[:] = [d for d in dirs if d not in exclude]
         for file in files:
-            file = (os.path.join(from_where, file))
-            full_list.append(f"{file}")
-    return full_list
+            if kovetz:
+                if file == kovetz:
+                    return pathlib.Path(os.path.join(root, file))
+            else:
+                file_list.append(pathlib.Path(os.path.join(root, file)))
+    if kovetz:
+        raise FileNotFoundError
+    else:
+        return file_list
 
 
-def move_to_merge(files):
-    for file in files:
-        shutil.copy2(file, search_wit(subfolder="staging_area"))
+def print_diff(dir_file, dir2_file, printer=True):
+    if dir_file != "":
+        dnme = f"{dir_file}"
+        try:
+            dline = open(dir_file).readlines()
+        except UnicodeDecodeError:
+            logger.info(f"{dir2_file} is not a text file!")
+            return
+    else:
+        dnme = "None"
+        dline = ""
+    if dir2_file != "":
+        cnme = f"{dir2_file}"
+        try:
+            cline = open(dir2_file).readlines()
+        except UnicodeDecodeError:
+            logger.info(f"{dir2_file} is not a text file!")
+            return
+    else:
+        cnme = "None"
+        cline = ""
+    compare = unified_diff(
+        dline, cline, fromfile=dnme, tofile=cnme, n=3, lineterm=" ")
+    if printer:
+        for line in compare:
+            line = line.rstrip()
+            if line:
+                print(line)
+    else:
+        if compare:
+            return False
 
 
-def merge(branch_name):
+def find_diff_infolder(dir_1, dir_2=None, printer=True, brancom=False):
+    if not dir_2:
+        dir_2 = find_head_folder()
+    if printer:
+        if not brancom:
+            dir_1 = os.path.join(dir_1, dir_2.name)
+    files_not_in_2 = get_diff_files(filecmp.dircmp(dir_2, dir_1))
+    files_not_in_1 = get_diff_files(filecmp.dircmp(dir_1, dir_2))
+    compare_dirs = get_diff_content(filecmp.dircmp(dir_1, dir_2))
+    if not printer:
+        if compare_dirs == []:
+            return True
+        else:
+            return False
+    if files_not_in_2 != []:
+        for files in files_not_in_2:
+            for file in files:
+                try:
+                    print(f"{file} ONLY in {dir_1}")
+                    print("its contents are:")
+                    f = open(find_file(dir_1, file)).readlines()
+                    for line in f:
+                        print(line)
+                except UnicodeDecodeError:
+                    print(file)
+                print("THE END OF THE FILE.")
+    if files_not_in_1 != []:
+        for files in files_not_in_1:
+            for file in files:
+                try:
+                    print(f"{file} ONLY in {dir_2}")
+                    print("its contents are:")
+                    f = open(find_file(dir_2, file)).readlines()
+                    for line in f:
+                        print(line)
+                except UnicodeDecodeError:
+                    print(file)
+                print("THE END OF THE FILE.")
+    for files in compare_dirs:
+        if isinstance(files, list):
+            for file in files:
+                try:
+                    c_file = find_file(dir_1, file)
+                    d_file = find_file(dir_2, file)
+                except FileNotFoundError:
+                    logger.error("no file to check in the directories")
+                    return
+                if printer:
+                    print_diff(c_file, d_file)
+                else:
+                    if compare_dirs == []:
+                        return False
+                    else:
+                        return True
+        else:
+            try:
+                c_file = find_file(dir_1, files)
+                d_file = find_file(dir_2, files)
+            except FileNotFoundError:
+                logger.error("no file to check in the directories")
+                return
+            if printer:
+                print_diff(c_file, d_file)
+            else:
+                if compare_dirs == []:
+                    return False
+                else:
+                    return True
+
+
+def find_atrr(var):
+    if check_all_branches(var):
+        new_var = check_all_branches(var)
+        brnach = os.path.join(search_wit(subfolder="images"), new_var)
+        return brnach
+    elif var in os.listdir(search_wit(subfolder="images")):
+        return os.path.join(search_wit(subfolder="images"), var)
+    else:
+        return False
+
+
+def diff(var_1=None, var_2=None):
     if not search_wit():
-        logger.info(
-            "Tried to preform merge, No wit found in this directory!")
-    merger = find_merging_point(branch_name)
-    branch, head = check_merge(merger, branch_name)
-    move_to_merge(branch)
+        logger.warning("no wit folder found! cant diff")
+        return
+    head, _, _ = get_master_head()
+    last_commit = os.path.join(
+        search_wit(subfolder="images"), head)
+    stage = search_wit(subfolder="staging_area")
+    if var_1 == "--cached":
+        if var_2:
+            if not find_atrr(var_2):
+                try:
+                    commit_file = find_file(last_commit, var_2)
+                    dir_file = find_file(search_wit(
+                        subfolder="staging_area"), var_2)
+                except FileNotFoundError:
+                    logger.error("no file to check in the directories")
+                    return
+                print_diff(commit_file, dir_file)
+            else:
+                try:
+                    find_diff_infolder(
+                        find_atrr(var_2), stage, brancom=True)
+                except TypeError:
+                    logger.error("no dir like that!")
+                    return
+        else:
+            find_diff_infolder(last_commit, stage, brancom=True)
+    else:
+        if var_1:
+            if var_2:
+                if find_atrr(var_1):
+                    if find_atrr(var_2):
+                        find_diff_infolder(
+                            find_atrr(var_1), find_atrr(var_2), brancom=True)
+            else:
+                if not find_atrr(var_1):
+                    try:
+                        commit_file = find_file(last_commit, var_1)
+                        dir_file = find_file(search_wit(), var_1, [
+                            "images", "staging_area"])
+                    except FileNotFoundError:
+                        logger.error(
+                            "no file like that in one of the directories")
+                        return
+                    print_diff(commit_file, dir_file)
+                else:
+                    try:
+                        find_diff_infolder(
+                            find_atrr(var_1), last_commit, brancom=True)
+                    except TypeError:
+                        logger.error("no dir like that!")
+                        return
+
+        else:
+            find_diff_infolder(last_commit)
 
 
 if __name__ == "__main__":
@@ -495,5 +702,12 @@ if __name__ == "__main__":
             graph()
         if sys.argv[1] == "branch":
             branch(sys.argv[2])
-        if sys.argv[1] == "merge":
-            merge(sys.argv[2])
+        # if sys.argv[1] == "merge":
+        #     merge(sys.argv[2])
+        if sys.argv[1] == "diff":
+            if len(sys.argv) == 2:
+                diff()
+            if len(sys.argv) == 3:
+                diff(sys.argv[2])
+            if len(sys.argv) == 4:
+                diff(sys.argv[2], sys.argv[3])
